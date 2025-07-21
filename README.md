@@ -16,10 +16,19 @@ A backend API built with **Node.js**, **Express**, and **MongoDB** that supports
 
 ---
 
+## Envirnment variables
+COINBASE_API_KEY=c208c6ed-0c0e-4566-bfdc-7b16c651ed07
+PORT=3000
+MONGO_URI=mongodb+srv://meerhamza6:6430532aa@cluster0.wvqzf.mongodb.net/crypto-payment
+JWT_SECRET =meerhamza545dfgjvgjr
+JWT_EXPIRE =30d
+OPENNODE_API_KEY=f352f933-d55c-40b4-942c-a9561fb2efe3
+
 ## 🛠️ Setup Instructions
 clone this repo https://github.com/Meersource/Payment-Gateway-Integration.git
 and switch to branch open_node
 initilize ngrok npx ngrok http 3000
+i test sandbox paymnet through this website https://coinfaucet.eu/en/btc-testnet/
 
 ### 1. Prerequisites
 
