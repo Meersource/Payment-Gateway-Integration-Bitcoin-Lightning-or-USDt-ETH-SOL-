@@ -5,7 +5,7 @@ const paymentSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true
+    // required: true
   },
   amount: {
     type: Number,
@@ -13,15 +13,16 @@ const paymentSchema = new mongoose.Schema({
   },
   currency: {
     type: String,
+    required: true,
     default: "USD"
   },
-  coinbaseChargeId: String,
+  orderId:String,
+  chargeId: String,
   hostedUrl: String,
   status: {
     type: String,
     default: "pending"
   },
-//   status: { type: String, enum: ['NEW', 'PENDING', 'COMPLETED', 'FAILED'], default: 'NEW' },
   createdAt: {
     type: Date,
     default: Date.now

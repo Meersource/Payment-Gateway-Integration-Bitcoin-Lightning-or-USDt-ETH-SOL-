@@ -1,131 +1,89 @@
 const axios = require('axios');
 const Payment = require('../models/Payment');
-const { mapCoinbaseEventToStatus } = require('../utils/EventStatus');
+const ErrorResponse = require('../utils/errorResponse');
+const asyncHandler = require('../middlware/async');
 
-/**
- * Create a new Coinbase charge
- */
+//@desc    Create a new OpenNode charge
+//@route   POST /api/create-payment
+//@access   Private
 
-exports.createPayment = async (req, res) => {
-  try {
+exports.createPayment =asyncHandler(async (req, res) => {
     const { amount, currency } = req.body;
-    const user = req.user;
-
     const response = await axios.post(
-      "https://api.commerce.coinbase.com/charges",
+      'https://dev-api.opennode.com/v1/charges',
       {
-        name: "Product Purchase",
-        description: `Payment by user ${user.email}`,
-        local_price: {
-          amount,
-          currency
-        },
-        pricing_type: "fixed_price",
-        metadata: {
-          userId: user._id.toString(),
-          email: user.email
-        },
-        redirect_url: "https://www.google.com/",
-        cancel_url: "https://yourdomain.com/payment-cancel"
+        amount,
+        currency,
+        description: `Payment from user ${req.user.id}`,
+        callback_url: `https://d9d61a6816c5.ngrok-free.app/api/webhook/opennode`,
+        auto_settle: false
       },
       {
         headers: {
-          "X-CC-Api-Key": process.env.COINBASE_API_KEY,
-          "X-CC-Version": "2018-03-22",
-          "Content-Type": "application/json"
+          'Content-Type': 'application/json',
+          'Authorization': process.env.OPENNODE_API_KEY
         }
       }
     );
-
     const charge = response.data.data;
 
-    // Save payment info to DB
-    const payment = new Payment({
-      user: user._id,
+    const payment = await Payment.create({
+      user: req.user.id,
       amount,
       currency,
-      coinbaseChargeId: charge.id,
-      hostedUrl: charge.hosted_url,
-      status: "pending"
+      chargeId: charge.id,
+      hostedUrl: charge.hosted_checkout_url,
+      status: charge.status || 'new'
     });
+    res.status(201).json({ paymentUrl: charge.hosted_checkout_url, chargeId: charge.id });
+});
 
-    await payment.save();
+//@desc    Webhook to receive OpenNode event
+//@route   POST /api/webhook/opennode
+//@access   Private
 
-    res.status(200).json({ success:true,url: charge.hosted_url, paymentId: payment._id });
-  } catch (error) {
-    console.error("Create Payment Error:", error.message);
-    res.status(500).json({ message: "Payment creation failed" });
-  }
-};
+exports.handleOpenNodeWebhook =asyncHandler(async (req, res) => {
+    const { id: chargeId, status } = req.body;
 
-//////////////////
-// exports.createPayment = async (req, res) => {
-//   try {
-//     const { amount, currency } = req.body;
+    if (!chargeId || !status) {
+      return next(new ErrorResponse(`Invalid webhook payload`, 400))
+    }
+    const payment = await Payment.findOneAndUpdate(
+      { chargeId: chargeId },
+      {
+        status: status.toUpperCase(),
+        paidAt: status.toLowerCase() === 'paid' ? new Date() : undefined
+      },
+      { new: true }
+    ).populate('user', 'email name');
 
-//     const chargeData = {
-//       name: 'Crypto Payment',
-//       description: 'Payment for subscription or product',
-//       local_price: { amount, currency },
-//       pricing_type: 'fixed_price',
-//       metadata: { customer_id: 'test123' },
-//        organization_name: 'Meer Hamza'
-//     };
-
-//     const response = await axios.post('https://api.commerce.coinbase.com/charges', chargeData, {
-//       headers: {
-//         'X-CC-Api-Key': process.env.COINBASE_API_KEY,
-//         'X-CC-Version': '2018-03-22',
-//         'Content-Type': 'application/json',
-//       },
-//     });
-//     const { id, hosted_url } = response.data.data;
-//     const payment = await Payment.create({
-//       chargeId: id,
-//       hostedUrl: hosted_url,
-//       amount,
-//       currency,
-//     });
-
-//     res.status(200).json({ success: true, hostedUrl: hosted_url, paymentId: payment._id });
-//   } catch (err) {
-//     console.error('Create Payment Error:', err.message);
-//     res.status(500).json({ error: 'Payment creation failed' });
-//   }
-// };
-
-/**
- * Webhook to receive Coinbase event
- */
-exports.handleWebhook = async (req, res) => {
-    // console.log("web hook triggered")
-
-  try {
-    const event = req.body.event;
-    const chargeId = event.data.id;
-const status = await mapCoinbaseEventToStatus(event)
-console.log("status", status)
-console.log("event", event)
-    // const status = event.type.includes('charge:created') ? 'COMPLETED' :  event.type.includes('charge:confirmed') ? "Confirmed" : event.type.includes('charge:failed') ? 'FAILED' : 'PENDING';
-// console.log("web hook triggered", event)
-    await Payment.findOneAndUpdate({ coinbaseChargeId:chargeId }, { status: event.type }, { new: true });
-    res.status(200).send('Webhook received');
-  } catch (err) {
-    console.error('Webhook Error:', err.message);
-    res.status(400).send('Webhook processing failed');
-  }
-};
-
+    if (!payment) {
+      console.warn(`Webhook received for unknown charge ID: ${chargeId}`);
+      return next(new ErrorResponse(`Payment not found`, 404))
+    }
+    console.log(
+      `Webhook: Payment status updated for user ${payment.user?.email} | Charge ID: ${chargeId} | New Status: ${status.toUpperCase()}`
+    );
+    res.status(200).send('Webhook processed');
+});
 /**
  * Get payment status
  */
-exports.getPaymentStatus = async (req, res) => {
-  try {
+
+//@desc   Get payment status
+//@route   POST /api/payment-status/:id
+//@access   Private
+
+exports.getPaymentStatus =asyncHandler( async (req, res) => {
+
     const payment = await Payment.findById(req.params.id);
-    if (!payment) return res.status(404).json({ error: 'Payment not found' });
-    res.status(200).json(payment);
-  } catch (err) {
-    console.error('Get Status Error:', err.message);
-    res.status(500).json({ error: 'Failed to fetch payment status' });
-  }
-};
+    if (!payment) {
+      return next(new ErrorResponse(`Payment not found`, 404))
+    }
+    if (payment.user.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    res.status(200).json({ success: true, payment });
+  
+});

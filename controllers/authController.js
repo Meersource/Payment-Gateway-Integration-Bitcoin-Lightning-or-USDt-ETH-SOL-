@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const User = require('../models/User')
 const ErrorResponse = require("../utils/errorResponse");
 const asyncHandler = require("../middlware/async");
@@ -49,5 +48,4 @@ exports.login = asyncHandler(async(req, res, next)=>{
         createdAt: user.createdAt
     };
     res.status(200).json({success: true, token, user:userData})
-
 })
